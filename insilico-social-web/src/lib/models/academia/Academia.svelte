@@ -3,13 +3,29 @@
 
     const academia = new Academia();
 
-    const r = academia.serialize();
+    academia.init(5);
 
-    console.log(r);
+    let summary = $state(academia.summarize());
+
+
+
+    academia.run(12000000, 100, 12, (s) => {
+       summary = s;
+    })
 </script>
 
 <div class="model-container">
     <h3>model</h3>
+    <table>
+        <tbody>
+            {#each Object.entries(summary) as [key, value]}
+                <tr>
+                    <td>{key}</td>
+                    <td>{value}</td>
+                </tr>
+            {/each}
+        </tbody>
+    </table>
 </div>
 
 

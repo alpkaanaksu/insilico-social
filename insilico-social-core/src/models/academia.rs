@@ -1,9 +1,11 @@
-use wasm_bindgen::prelude::*;
 use serde::{Deserialize, Serialize};
+use wasm_bindgen::prelude::*;
+
+use gloo_timers::future::TimeoutFuture;
 
 const SIGNIFICANCE_LEVEL: f64 = 0.05;
 
-use crate::utils;
+use crate::utils::{self, random_int_in_range, set_panic_hook};
 
 #[wasm_bindgen]
 #[derive(Serialize, Deserialize)]
@@ -15,7 +17,7 @@ pub struct Academia {
     #[wasm_bindgen(skip)]
     pub researchers: Vec<Researcher>,
     #[wasm_bindgen(skip)]
-    pub studies: Vec<Study>
+    pub studies: Vec<Study>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -34,22 +36,21 @@ pub struct Researcher {
 pub enum StudyType {
     Original,
     Reproduction,
-    Replication
+    Replication,
 }
 
 #[wasm_bindgen]
-#[derive(Copy, Clone)]
-#[derive(Serialize, Deserialize)]
+#[derive(Copy, Clone, Serialize, Deserialize)]
 pub enum PublicationStatus {
     Pending,
     Published,
-    Unpublished
+    Unpublished,
 }
 
 #[derive(Serialize, Deserialize)]
 pub enum ConfirmationStatus {
     Confirmed,
-    Disconfirmed
+    Disconfirmed,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -70,6 +71,22 @@ pub struct Study {
     pub confirmation_status: Option<ConfirmationStatus>,
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct Summary {
+    pub time: u32,
+    pub number_of_studies: u32,
+    pub number_of_researchers: u32,
+    pub number_of_published_studies: u32,
+    pub number_of_unpublished_studies: u32,
+    pub number_of_reproductions: u32,
+    pub number_of_replications: u32,
+    pub number_of_originals: u32,
+    pub number_of_confirmed: u32,
+    pub number_of_disconfirmed: u32,
+    pub number_of_pending: u32,
+    pub avg_effect_size: f64,
+}
+
 #[wasm_bindgen]
 impl Academia {
     #[wasm_bindgen(constructor)]
@@ -84,11 +101,127 @@ impl Academia {
     }
 
     #[wasm_bindgen]
+    pub fn init(&mut self, num_of_researches: u32) {
+        for _ in 0..num_of_researches {
+            self.add_researcher();
+        }
+    }
+
+    #[wasm_bindgen]
+    pub async fn run(
+        &mut self,
+        max_steps: u32,
+        sleep_millis: u32,
+        summary_interval: u32,
+        update_function: js_sys::Function,
+    ) {
+        set_panic_hook();
+
+        for _ in 0..max_steps {
+            TimeoutFuture::new(sleep_millis).await;
+
+            self.step();
+
+            if self.time % summary_interval == 0 {
+                update_function
+                    .call1(&JsValue::NULL, &self.summarize())
+                    .unwrap();
+            }
+        }
+    }
+
+    #[wasm_bindgen]
+    pub fn step(&mut self) {
+        for _ in 0..random_int_in_range(0, 10) {
+            self.add_researcher();
+        }
+
+        for researcher in &mut self.researchers {
+            researcher.step();
+        }
+
+        self.time += 1;
+    }
+
+    pub fn add_researcher(&mut self) {
+        let researcher = Researcher::new(self.last_researcher_id);
+        self.researchers.push(researcher);
+        self.last_researcher_id += 1;
+    }
+
+    #[wasm_bindgen]
+    pub fn summarize(&self) -> JsValue {
+        let mut summary = Summary {
+            time: self.time,
+            number_of_studies: self.studies.len() as u32,
+            number_of_researchers: self.researchers.len() as u32,
+            number_of_published_studies: 0,
+            number_of_unpublished_studies: 0,
+            number_of_reproductions: 0,
+            number_of_replications: 0,
+            number_of_originals: 0,
+            number_of_confirmed: 0,
+            number_of_disconfirmed: 0,
+            number_of_pending: 0,
+            avg_effect_size: 0.0,
+        };
+
+        for study in &self.studies {
+            match study.publication_status {
+                PublicationStatus::Published => summary.number_of_published_studies += 1,
+                PublicationStatus::Unpublished => summary.number_of_unpublished_studies += 1,
+                _ => {}
+            }
+
+            match study.study_type {
+                StudyType::Original => summary.number_of_originals += 1,
+                StudyType::Reproduction => summary.number_of_reproductions += 1,
+                StudyType::Replication => summary.number_of_replications += 1,
+            }
+
+            if let Some(ConfirmationStatus::Confirmed) = study.confirmation_status {
+                summary.number_of_confirmed += 1;
+            } else if let Some(ConfirmationStatus::Disconfirmed) = study.confirmation_status {
+                summary.number_of_disconfirmed += 1;
+            } else {
+                summary.number_of_pending += 1;
+            }
+        }
+
+        if summary.number_of_studies > 0 {
+            let total_effect_size: f64 = self.studies.iter().map(|s| s.reported_effect_size).sum();
+            summary.avg_effect_size = total_effect_size / (summary.number_of_studies as f64);
+        }
+
+        serde_wasm_bindgen::to_value(&summary).unwrap()
+    }
+
+    #[wasm_bindgen]
     pub fn serialize(&self) -> JsValue {
         serde_wasm_bindgen::to_value(&self).unwrap()
     }
 }
 
+impl Researcher {
+    pub fn new(id: u32) -> Self {
+        Self {
+            id,
+            current_study_id: None,
+            prob_reproduce: utils::random_prob(),
+            prob_replicate: utils::random_prob(),
+            prob_open_original: utils::random_prob(),
+            prob_open_repeating: utils::random_prob(),
+            odds_repeat_open: utils::random_prob(),
+            prob_closed_has_data: utils::random_prob(),
+        }
+    }
+
+    pub fn step(&mut self) {
+        // Implement the logic for the researcher's step here
+        // For now, we will just print the researcher's ID
+        // println!("Researcher {} is stepping", self.id);
+    }
+}
 
 impl Study {
     fn published_with_prob(&self, prob: f64) -> PublicationStatus {
@@ -112,19 +245,15 @@ impl Study {
                     self.publication_status = self.published_with_prob(prob_pub_null);
                 }
             }
-            StudyType::Replication | StudyType::Reproduction => {
-                match self.confirmation_status {
-                    Some(ConfirmationStatus::Confirmed) => {
-                        self.publication_status = self.published_with_prob(prob_pub_conf);
-                    }
-                    Some(ConfirmationStatus::Disconfirmed) => {
-                        self.publication_status = self.published_with_prob(prob_pub_disconf);
-                    }
-                    None => {
-                       
-                    }
+            StudyType::Replication | StudyType::Reproduction => match self.confirmation_status {
+                Some(ConfirmationStatus::Confirmed) => {
+                    self.publication_status = self.published_with_prob(prob_pub_conf);
                 }
-            }
+                Some(ConfirmationStatus::Disconfirmed) => {
+                    self.publication_status = self.published_with_prob(prob_pub_disconf);
+                }
+                None => {}
+            },
         }
     }
 }

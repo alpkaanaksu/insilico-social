@@ -1,45 +1,63 @@
+use wasm_bindgen::prelude::*;
+use serde::{Deserialize, Serialize};
+
 const SIGNIFICANCE_LEVEL: f64 = 0.05;
 
-pub mod utils;
+use crate::utils;
 
 #[wasm_bindgen]
+#[derive(Serialize, Deserialize)]
 pub struct Academia {
+    pub time: u32,
+    pub last_study_id: u32,
+    pub last_researcher_id: u32,
+
+    #[wasm_bindgen(skip)]
     pub researchers: Vec<Researcher>,
-    pub studies: Vec<Study>,
+    #[wasm_bindgen(skip)]
+    pub studies: Vec<Study>
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct Researcher {
-    pub academia: Academia,
-    pub id: String,
-    pub current_study: Option<Study>,
+    pub id: u32,
+    pub current_study_id: Option<u32>,
     pub prob_reproduce: f64,
     pub prob_replicate: f64,
     pub prob_open_original: f64,
-    pub prob_open_replicate: f64,
+    pub prob_open_repeating: f64,
     pub odds_repeat_open: f64,
     pub prob_closed_has_data: f64,
 }
 
+#[derive(Serialize, Deserialize)]
 pub enum StudyType {
     Original,
     Reproduction,
     Replication
 }
 
+#[wasm_bindgen]
+#[derive(Copy, Clone)]
+#[derive(Serialize, Deserialize)]
 pub enum PublicationStatus {
     Pending,
     Published,
     Unpublished
 }
 
+#[derive(Serialize, Deserialize)]
 pub enum ConfirmationStatus {
     Confirmed,
     Disconfirmed
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct Study {
+    pub id: u32,
+    pub start_time: u32,
     pub study_type: StudyType,
-    pub researcher_id: String,
+    pub researcher_id: u32,
     pub true_effect_size: f64,
     pub sampled_effect_size: f64,
     pub observed_effect_size: f64,
@@ -47,12 +65,9 @@ pub struct Study {
     pub duration_days: u32,
     pub publication_status: PublicationStatus,
 
-    // If replication study
-    pub replication_of: Option<Study>,
+    // If replication / reproduction study
+    pub original_study_id: Option<u32>,
     pub confirmation_status: Option<ConfirmationStatus>,
-
-    // If reproduction study
-    pub reproduction_of: Option<Study>
 }
 
 #[wasm_bindgen]
@@ -60,55 +75,23 @@ impl Academia {
     #[wasm_bindgen(constructor)]
     pub fn new() -> Self {
         Self {
+            time: 0,
+            last_study_id: 0,
+            last_researcher_id: 0,
             researchers: Vec::new(),
-            ongoing_studies: Vec::new(),
+            studies: Vec::new(),
         }
     }
 
-    pub fn add_researcher(&mut self, researcher: Researcher) {
-        self.researchers.push(researcher);
-    }
-
-    pub fn add_study(&mut self, study: Study) {
-        self.ongoing_studies.push(study);
-    }
-
-    pub fn get_random_free_study(&self) -> Option<&Study> {
-        self.ongoing_studies.iter().find(|study| {
-            
-            // Check if the study is free (not assigned to any researcher)
-            !self.researchers.iter().any(|r| r.id == study.researcher_id)
-        })
-    }
-
-    pub fn step(&mut self) {
-        for researcher in &mut self.researchers {
-            researcher.step();
-        }
-    }
-
+    #[wasm_bindgen]
     pub fn serialize(&self) -> JsValue {
-        JsValue::from_serde(self).unwrap()
+        serde_wasm_bindgen::to_value(&self).unwrap()
     }
 }
 
-pub impl Researcher {
-    #[wasm_bindgen(constructor)]
-    pub fn new(id: String, prob_reproduce: f64, prob_replicate: f64) -> Self {
-        Self {
-            id,
-            prob_reproduce,
-            prob_replicate,
-        }
-    }
 
-    pub fn step(&mut self) {
-        let study = self.academia.get_random_free_study();
-    }
-}
-
-pub impl Study {
-    fn published_with_prob(prob: f64) -> PublicationStatus {
+impl Study {
+    fn published_with_prob(&self, prob: f64) -> PublicationStatus {
         if utils::random_bool_with_prob(prob) {
             PublicationStatus::Published
         } else {
@@ -117,7 +100,6 @@ pub impl Study {
     }
 
     pub fn determine_publication_status(&mut self) {
-        let prob_pub_sig = 1.0;
         let prob_pub_null = 0.009;
         let prob_pub_conf = 0.6;
         let prob_pub_disconf = 0.7;
@@ -137,6 +119,9 @@ pub impl Study {
                     }
                     Some(ConfirmationStatus::Disconfirmed) => {
                         self.publication_status = self.published_with_prob(prob_pub_disconf);
+                    }
+                    None => {
+                       
                     }
                 }
             }

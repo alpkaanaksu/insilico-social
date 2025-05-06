@@ -1,4 +1,5 @@
 mod utils;
+pub mod models;
 
 use wasm_bindgen::prelude::*;
 
@@ -7,5 +8,4 @@ extern "C" {
     fn alert(s: &str);
 }
 
-#[wasm_bindgen]
-pub mod models;
+pub use models::academia::Academia;

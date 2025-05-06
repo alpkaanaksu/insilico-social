@@ -1,10 +1,15 @@
 <script>
-    import { add } from "insilico-social-core";
+    import { Academia } from "insilico-social-core";
+
+    const academia = new Academia();
+
+    const r = academia.serialize();
+
+    console.log(r);
 </script>
 
 <div class="model-container">
     <h3>model</h3>
-    {add(1, 1)}
 </div>
 
 

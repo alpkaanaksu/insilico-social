@@ -1,5 +1,8 @@
 # Compile Rust code to WebAssembly
 cd insilico-social-core
+
+export RUSTFLAGS='--cfg getrandom_backend="wasm_js"'
+
 wasm-pack build --target bundler
 
 # Check if the build was successful
